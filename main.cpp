@@ -1,16 +1,9 @@
 #include <windows.h>
 #include <msctf.h>
 #include <iostream>
+#include "constants.h"
 
 #pragma comment(lib, "msctf.lib")
-
-
-#define TF_IPPMF_FORPROCESS                     0x10000000
-#define TF_IPPMF_FORSESSION                     0x20000000
-#define TF_IPPMF_FORSYSTEMALL                   0x40000000
-#define TF_IPPMF_ENABLEPROFILE                  0x00000001
-#define TF_IPPMF_DISABLEPROFILE                 0x00000002
-#define TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE   0x00000004
 
 
 struct LanguageProfile {
@@ -20,6 +13,7 @@ struct LanguageProfile {
 };
 
 enum class Flag {
+    NOW = -1,
     EN = 0,
     SG = 1,
     WR = 2,
@@ -54,40 +48,44 @@ LangID: 2052
 Profile GUID: E7EA138F-69F8-11D7-EE-EE-0-6-5B-84-43-11
 ******************************************
  */
-// 搜狗输入法
+// 定义搜狗输入法的CLSID
 constexpr CLSID SG_CLSID = {0xE7EA138E, 0x69F8, 0x11D7, {0xA6, 0xEA, 0x00, 0x06, 0x5B, 0x84, 0x43, 0x10}};
-// 英语键盘
+// 定义英语键盘的CLSID
 constexpr CLSID EN_CLSID = {0x00000000, 0x0000, 0x0000, {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
-// 微软输入法
+// 定义微软输入法的CLSID
 constexpr CLSID WR_CLSID = {0x81D4E9C9, 0x1D3B, 0x41BC, {0x9E, 0x6C, 0x4B, 0x40, 0xBF, 0x79, 0xE3, 0x5E}};
-// Hi 英文输入法
+// 定义Hi英文输入法的CLSID
 constexpr CLSID HI_CLSID = {0xE7EA138F, 0x69F8, 0x11D7, {0xEE, 0xEE, 0x00, 0x06, 0x5B, 0x84, 0x43, 0x10}};
 
+// 定义搜狗拼音的语言配置文件
 constexpr LanguageProfile SG_LG_PROFILE = {
     .clsid = SG_CLSID,
     .langid = 2052,
     .description = L"搜狗拼音"
 };
 
+// 定义英语键盘的语言配置文件
 constexpr LanguageProfile EN_LG_PROFILE = {
     .clsid = EN_CLSID,
     .langid = 1033,
     .description = L"英语键盘"
 };
 
+// 定义微软拼音的语言配置文件
 constexpr LanguageProfile WR_LG_PROFILE = {
     .clsid = WR_CLSID,
     .langid = 2052,
     .description = L"微软拼音"
 };
 
+// 定义Hi英文输入法的语言配置文件
 constexpr LanguageProfile HI_LG_PROFILE = {
     .clsid = HI_CLSID,
     .langid = 2052,
     .description = L"Hi英文输入法"
 };
 
-
+// 根据标志获取对应的语言配置文件
 const LanguageProfile *getLanguageProfile(const Flag flag) {
     switch (flag) {
         case Flag::EN: return &EN_LG_PROFILE;
@@ -98,15 +96,14 @@ const LanguageProfile *getLanguageProfile(const Flag flag) {
     }
 }
 
-
-int main(int argc, char *argv[]) {
-    auto flag = Flag::HI; // 默认值
-
+// 解析命令行参数，返回输入法标志
+Flag parseFlag(const int argc, char *argv[]) {
+    auto flag = Flag::NOW; // 默认值
     if (argc > 1) {
         try {
-            int flagValue = std::stoi(argv[1]);
-            flag = static_cast<Flag>(flagValue);
-            if (flag != Flag::EN && flag != Flag::SG && flag != Flag::WR && flag != Flag::HI) {
+            if (int flagValue = std::stoi(argv[1]); flagValue >= -1 && flagValue <= 3) {
+                flag = static_cast<Flag>(flagValue);
+            } else {
                 std::cerr << "Invalid flag value: " << flagValue << ", defaulting to EN" << std::endl;
                 flag = Flag::EN;
             }
@@ -115,68 +112,152 @@ int main(int argc, char *argv[]) {
             flag = Flag::EN;
         }
     }
+    return flag;
+}
 
-    const LanguageProfile selectLanguageProfile = *getLanguageProfile(flag);
-    HRESULT hr = CoInitialize(nullptr);
+// 初始化COM库
+bool initializeCOM() {
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
-        std::cerr << "CoInitialize failed: " << hr << std::endl;
+        std::cerr << "CoInitializeEx failed: " << hr << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// 创建输入处理器配置文件管理器实例
+bool createProfileManager(ITfInputProcessorProfileMgr **ppProfileMgr) {
+    const HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+                                        IID_ITfInputProcessorProfileMgr, reinterpret_cast<void **>(ppProfileMgr));
+    if (FAILED(hr)) {
+        std::cerr << "CoCreateInstance failed: " << hr << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// 枚举输入处理器配置文件
+bool enumerateProfiles(ITfInputProcessorProfileMgr *pProfileMgr, IEnumTfInputProcessorProfiles **ppEnumProfiles) {
+    if (const HRESULT hr = pProfileMgr->EnumProfiles(0, ppEnumProfiles); FAILED(hr)) {
+        std::cerr << "EnumProfiles failed: " << hr << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// 输出当前激活文件信息
+bool printCurrentProfile(ITfInputProcessorProfileMgr *pProfileMgr) {
+    TF_INPUTPROCESSORPROFILE profileTmp;
+    pProfileMgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &profileTmp);
+    std::wcout << L"******************************************" << std::endl;
+    std::wcout << L"CLSID: " << std::hex << std::uppercase;
+    std::wcout << profileTmp.clsid.Data1 << L"-";
+    std::wcout << profileTmp.clsid.Data2 << L"-";
+    std::wcout << profileTmp.clsid.Data3 << L"-";
+    for (int i = 0; i < 8; ++i) {
+        std::wcout << std::hex << std::uppercase << (int) profileTmp.clsid.Data4[i];
+        if (i < 7) std::wcout << L"-";
+    }
+    std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
+
+    std::wcout << L"LangID: " << profileTmp.langid << std::endl;
+
+
+    std::wcout << L"Profile GUID: " << std::hex << std::uppercase;
+    std::wcout << profileTmp.guidProfile.Data1 << L"-";
+    std::wcout << profileTmp.guidProfile.Data2 << L"-";
+    std::wcout << profileTmp.guidProfile.Data3 << L"-";
+    for (int i = 0; i < 8; ++i) {
+        std::wcout << std::hex << std::uppercase << (int) profileTmp.guidProfile.Data4[i];
+        if (i < 7) std::wcout << L"-";
+    }
+    std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
+    std::wcout << L"******************************************" << std::endl;
+
+    return true;
+}
+
+// 激活指定的输入处理器配置文件
+bool activateProfile(ITfInputProcessorProfileMgr *pProfileMgr, const LanguageProfile &selectLanguageProfile,
+                     IEnumTfInputProcessorProfiles *pEnumProfiles) {
+    TF_INPUTPROCESSORPROFILE profile;
+    ULONG fetched = 0;
+    while (pEnumProfiles->Next(1, &profile, &fetched) == S_OK) {
+        if (profile.clsid == selectLanguageProfile.clsid && profile.langid == selectLanguageProfile.langid) {
+            const HRESULT hr = pProfileMgr->ActivateProfile(
+                TF_PROFILETYPE_INPUTPROCESSOR,
+                profile.langid,
+                profile.clsid,
+                profile.guidProfile,
+                nullptr,
+                TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE | TF_IPPMF_FORPROCESS |
+                TF_IPPMF_ENABLEPROFILE);
+
+            if (FAILED(hr)) {
+                if (E_FAIL == hr) {
+                    std::cout << "ActivateProfile E_FAIL" << std::endl;
+                } else {
+                    std::cout << "ActivateProfile Unknown" << std::endl;
+                }
+                std::cerr << "ActivateProfile failed: " << hr << std::endl;
+                return false;
+            } else {
+                std::cout << "ActivateProfile success" << std::endl;
+            }
+            return true;
+        }
+    }
+    return true;
+}
+
+// 释放资源
+void releaseResources(IEnumTfInputProcessorProfiles *pEnumProfiles, ITfInputProcessorProfileMgr *pProfileMgr) {
+    if (pEnumProfiles) {
+        pEnumProfiles->Release();
+    }
+    if (pProfileMgr) {
+        pProfileMgr->Release();
+    }
+    CoUninitialize();
+}
+
+// 主函数
+int main(const int argc, char *argv[]) {
+    const Flag flag = parseFlag(argc, argv);
+
+
+    if (!initializeCOM()) {
         return 1;
     }
 
     ITfInputProcessorProfileMgr *pProfileMgr = nullptr;
-    hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
-                          IID_ITfInputProcessorProfileMgr, reinterpret_cast<void **>(&pProfileMgr));
-    if (FAILED(hr)) {
-        std::cerr << "CoCreateInstance failed: " << hr << std::endl;
+    if (!createProfileManager(&pProfileMgr)) {
         CoUninitialize();
         return 1;
     }
 
+    if (flag == Flag::NOW) {
+        printCurrentProfile(pProfileMgr);
+        return 0;
+    }
+
     IEnumTfInputProcessorProfiles *pEnumProfiles = nullptr;
-    hr = pProfileMgr->EnumProfiles(0, &pEnumProfiles); // 传入 0 枚举所有配置文件
-    if (FAILED(hr)) {
-        std::cerr << "EnumProfiles failed: " << hr << std::endl;
+    if (!enumerateProfiles(pProfileMgr, &pEnumProfiles)) {
         pProfileMgr->Release();
         CoUninitialize();
         return 1;
     }
 
+    const LanguageProfile selectLanguageProfile = *getLanguageProfile(flag);
 
-    TF_INPUTPROCESSORPROFILE profile;
-    ULONG fetched = 0;
-
-
-    while (pEnumProfiles->Next(1, &profile, &fetched) == S_OK) {
-
-        if (profile.clsid == selectLanguageProfile.clsid) {
-            if (profile.langid == selectLanguageProfile.langid) {
-                hr = pProfileMgr->ActivateProfile(
-                    TF_PROFILETYPE_INPUTPROCESSOR,
-                    profile.langid,
-                    profile.clsid,
-                    profile.guidProfile,
-                    nullptr,
-                    TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE | TF_IPPMF_FORPROCESS | TF_IPPMF_ENABLEPROFILE);
-
-                if (FAILED(hr)) {
-                     if (E_FAIL == hr) {
-                        std::cout << "ActivateProfile E_FAIL" << std::endl;
-                    } else {
-                        std::cout << "ActivateProfile Unknown" << std::endl;
-                    }
-                    std::cerr << "ActivateProfile failed: " << hr << std::endl;
-                    return 1;
-                } else {
-                    std::cout << "ActivateProfile success" << std::endl;
-                }
-            }
-        }
-
+    if (!activateProfile(pProfileMgr, selectLanguageProfile, pEnumProfiles)) {
+        pEnumProfiles->Release();
+        pProfileMgr->Release();
+        CoUninitialize();
+        return 1;
     }
 
-    pEnumProfiles->Release();
-    pProfileMgr->Release();
-    CoUninitialize();
+    releaseResources(pEnumProfiles, pProfileMgr);
 
     return 0;
 }
