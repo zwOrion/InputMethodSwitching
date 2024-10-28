@@ -101,13 +101,6 @@ const LanguageProfile *getLanguageProfile(const Flag flag) {
 
 int main(int argc, char *argv[]) {
     auto flag = Flag::HI; // 默认值
-    /*// 打印参数个数
-    std::wcout << L"参数个数: " << argc << std::endl;
-
-    // 打印所有参数
-    for (int i = 0; i < argc; ++i) {
-        std::wcout << L"参数 " << i << ": " << argv[i] << std::endl;
-    }*/
 
     if (argc > 1) {
         try {
@@ -148,77 +141,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    TF_INPUTPROCESSORPROFILE profileTmp;
-    pProfileMgr->GetActiveProfile(GUID_TFCAT_TIP_KEYBOARD, &profileTmp);
-    std::wcout << L"******************************************" << std::endl;
-    std::wcout << L"CLSID: " << std::hex << std::uppercase;
-    std::wcout << profileTmp.clsid.Data1 << L"-";
-    std::wcout << profileTmp.clsid.Data2 << L"-";
-    std::wcout << profileTmp.clsid.Data3 << L"-";
-    for (int i = 0; i < 8; ++i) {
-        std::wcout << std::hex << std::uppercase << (int) profileTmp.clsid.Data4[i];
-        if (i < 7) std::wcout << L"-";
-    }
-    std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
-
-    std::wcout << L"LangID: " << profileTmp.langid << std::endl;
-
-
-    std::wcout << L"Profile GUID: " << std::hex << std::uppercase;
-    std::wcout << profileTmp.guidProfile.Data1 << L"-";
-    std::wcout << profileTmp.guidProfile.Data2 << L"-";
-    std::wcout << profileTmp.guidProfile.Data3 << L"-";
-    for (int i = 0; i < 8; ++i) {
-        std::wcout << std::hex << std::uppercase << (int) profileTmp.guidProfile.Data4[i];
-        if (i < 7) std::wcout << L"-";
-    }
-    std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
-    std::wcout << L"******************************************" << std::endl;
 
     TF_INPUTPROCESSORPROFILE profile;
     ULONG fetched = 0;
 
 
     while (pEnumProfiles->Next(1, &profile, &fetched) == S_OK) {
-        // 输出配置文件信息
-        std::wcout << L"CLSID: " << std::hex << std::uppercase;
-        std::wcout << profile.clsid.Data1 << L"-";
-        std::wcout << profile.clsid.Data2 << L"-";
-        std::wcout << profile.clsid.Data3 << L"-";
-        for (int i = 0; i < 8; ++i) {
-            std::wcout << std::hex << std::uppercase << (int) profile.clsid.Data4[i];
-            if (i < 7) std::wcout << L"-";
-        }
-        std::wcout << L"CLSID: " << std::hex << std::uppercase;
-        std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
-
-        // std::wcout << L"Profile  " << std::hex << std::uppercase;
-        std::wcout << L"LangID: " << profile.langid << std::endl;
-
-        // std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
-
-        std::wcout << L"Profile GUID: " << std::hex << std::uppercase;
-        std::wcout << profile.guidProfile.Data1 << L"-";
-        std::wcout << profile.guidProfile.Data2 << L"-";
-        std::wcout << profile.guidProfile.Data3 << L"-";
-        for (int i = 0; i < 8; ++i) {
-            std::wcout << std::hex << std::uppercase << (int) profile.guidProfile.Data4[i];
-            if (i < 7) std::wcout << L"-";
-        }
 
         if (profile.clsid == selectLanguageProfile.clsid) {
             if (profile.langid == selectLanguageProfile.langid) {
-
-                /*hr =  pProfileMgr->ActivateProfile(TF_PROFILETYPE_KEYBOARDLAYOUT,profile.langid,CLSID_NULL,GUID_NULL,profile.hkl,TF_IPPMF_FORSESSION);
-                if (FAILED(hr)) {
-                        std::cerr << "ActivateProfile Key failed: " << hr << std::endl;
-                } else {
-                    std::cout << "ActivateProfile Key success" << std::endl;
-                }*/
-                // pProfileMgr->DeactivateProfile(TF_PROFILETYPE_INPUTPROCESSOR,profile.langid,profile.clsid,profile.guidProfile,nullptr,TF_IPPMF_FORSESSION);
-                /*hr = pProfileMgr->ActivateProfile(TF_PROFILETYPE_KEYBOARDLAYOUT,profile.langid,CLSID_NULL,GUID_NULL,profile.hkl,
-                    TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE | TF_IPPMF_FORPROCESS | TF_IPPMF_ENABLEPROFILE);*/
-
                 hr = pProfileMgr->ActivateProfile(
                     TF_PROFILETYPE_INPUTPROCESSOR,
                     profile.langid,
@@ -227,11 +158,8 @@ int main(int argc, char *argv[]) {
                     nullptr,
                     TF_IPPMF_FORSESSION | TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE | TF_IPPMF_FORPROCESS | TF_IPPMF_ENABLEPROFILE);
 
-
                 if (FAILED(hr)) {
-                    if (S_FALSE == hr) {
-                        std::cout << "ActivateProfile S_FALSE" << std::endl;
-                    } else if (E_FAIL == hr) {
+                     if (E_FAIL == hr) {
                         std::cout << "ActivateProfile E_FAIL" << std::endl;
                     } else {
                         std::cout << "ActivateProfile Unknown" << std::endl;
@@ -244,10 +172,6 @@ int main(int argc, char *argv[]) {
             }
         }
 
-
-        std::wcout << std::dec << std::nouppercase << std::endl; // 切换回十进制输出并关闭大写
-        // std::wcout << L"Description: " << profile.szProfile << std::endl;
-        std::wcout << L"---------------------------------" << std::endl;
     }
 
     pEnumProfiles->Release();
